@@ -52,7 +52,7 @@ async function fetchCandles(symbol, interval) {
   period1.setDate(period1.getDate() - (interval === '1d' ? 400 : 30));
 
   const result = await yahooFinance.chart(symbol, {
-    period1: period1.toISOString().split('T'),
+    period1: period1,
     interval: interval
   });
 
