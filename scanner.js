@@ -60,35 +60,28 @@ async function fetchCandles(symbol, interval) {
     }));
 }
 
-async function runScanner() {
-  console.log('--- Starting Diagnostic Test ---');
-  // 1. ముందుగా Telegram కనెక్షన్ డైరెక్ట్ టెస్ట్
-  await sendTelegramAlert('🔔 <b>Test Alert:</b> AdvStoch Scanner connected!');
+async function sendTelegramAlert(message) {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+    console.error('❌ ERROR: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing in GitHub Secrets!');
+    return;
+  }
 
-  for (const symbol of STOCKS) {
-    try {
-      const candles = await fetchCandles(symbol, TIMEFRAME);
-      console.log(`${symbol}: Fetched ${candles.length} candles.`);
+  const url = 'https://telegram.org' + TELEGRAM_BOT_TOKEN + '/sendMessage';
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: TELEGRAM_CHAT_ID,
+      text: message,
+      parse_mode: 'HTML'
+    })
+  });
 
-      const pineTS = new PineTS(candles);
-      const result = await pineTS.run(fullPineCode);
-
-      console.log('Available Plots:', Object.keys(result.plots));
-      const signals = result.plots['BuySignal']?.data;
-      const kVals   = result.plots['K_Val']?.data;
-      const dVals   = result.plots['D_Val']?.data;
-
-      const lastIdx = signals.length - 2;
-      console.log(`${symbol} -> Signal: ${signals[lastIdx]}, K: ${kVals[lastIdx]}, D: ${dVals[lastIdx]}`);
-
-      if (Number(signals[lastIdx]) === 1 || signals[lastIdx] === true) {
-        const cleanName = symbol.replace('.NS', '');
-        const msg = `🟢 <b>${cleanName}</b> | K: ${Number(kVals[lastIdx]).toFixed(3)} | D: ${Number(dVals[lastIdx]).toFixed(3)}`;
-        await sendTelegramAlert(msg);
-      }
-    } catch (err) {
-      console.error(`❌ Error in ${symbol}:`, err);
-    }
+  const data = await res.json();
+  if (!data.ok) {
+    console.error('❌ Telegram API Error:', JSON.stringify(data));
+  } else {
+    console.log('✅ Telegram Message Delivered Successfully!');
   }
 }
 
