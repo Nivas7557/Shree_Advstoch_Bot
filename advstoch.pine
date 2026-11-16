@@ -1,0 +1,423 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Shreenivasss
+
+//@version=6
+indicator("AdvStoch v5.5.3 — Institutional Edition", shorttitle="AdvStoch v5.5.3", overlay=false)
+
+//────────────────────────────────────
+// 1. CORE SMI FAMILY INPUTS
+//────────────────────────────────────
+string groupCore   = "1. Core SMI Family"
+
+// 1. Raw Mode (Added "Hilbert Adaptive" to the list)
+string rawMode     = input.string("Automatic (Smart 5-Zone)", "Raw Stoch Mode", options=["Automatic (Smart 5-Zone)", "Classic", "DTZ Extended", "Hilbert Adaptive (Zero-Lag)", "Ehler's Roofing", "Ehler's Extended", "Fusion DTZ Dynamic", "Hybrid"], group=groupCore, tooltip="Hilbert Adaptive uses Homodyne Discriminator for real-time cycle adjustment.")
+
+// 2. Base Source
+string baseMode    = input.string("Liquidity Blend", "Base Source", options=["Liquidity Blend", "OHLC4 (Heikin Ashi)", "HLC3 (Typical)", "Close"], group=groupCore)
+
+// 3. Length & Dynamic Logic
+int    lenN        = input.int(14, "Length (N)", minval=2, group=groupCore)
+bool   useDynN     = input.bool(false, "Use Dynamic Lengths (N)?", group=groupCore)
+int    minN        = input.int(5,  "• Min Length (N)", minval=2, group=groupCore)
+int    maxN        = input.int(35, "• Max Length (N)", minval=2, group=groupCore)
+
+//────────────────────────────────────
+// 2. %K SMOOTHING INPUTS
+//────────────────────────────────────
+string groupK      = "2. %K Smoothing"
+int    lenK        = input.int(3, "K Length", minval=1, group=groupK)
+bool   useDynK     = input.bool(false, "Use Dynamic Lengths (K)?", group=groupK)
+int    minK        = input.int(2,  "• Min Length (K)", minval=1, group=groupK)
+int    maxK        = input.int(15, "• Max Length (K)", minval=1, group=groupK)
+string typeK       = input.string("Shree Quantum", "K MA Algo", options=["SMA","EMA","WMA","Shree Standard","Shree Quantum"], group=groupK)
+string layerK      = input.string("Double", "K Layers", options=["Single","Double","Triple"], group=groupK)
+
+//────────────────────────────────────
+// 3. %D SMOOTHING INPUTS
+//────────────────────────────────────
+string groupD      = "3. %D Smoothing"
+int    lenD        = input.int(3, "D Length", minval=1, group=groupD)
+bool   useDynD     = input.bool(false, "Use Dynamic Lengths (D)?", group=groupD)
+int    minD        = input.int(2,  "• Min Length (D)", minval=1, group=groupD)
+int    maxD        = input.int(15, "• Max Length (D)", minval=1, group=groupD)
+string typeD       = input.string("Shree Quantum", "D MA Algo", options=["SMA","EMA","WMA","Shree Standard","Shree Quantum"], group=groupD)
+string layerD      = input.string("Single", "D Layers", options=["Single","Double","Triple"], group=groupD)
+
+//────────────────────────────────────
+// 4. SHREE & VOLATILITY SETTINGS
+//────────────────────────────────────
+string groupShree  = "Shree Algo Settings"
+bool   jmaTurbo    = input.bool(true, "Activate Turbo? (Standard Only)", group=groupShree)
+int    jmaPhase    = input.int(100, "Shree Phase", minval=-100, maxval=100, group=groupShree)
+int    jmaPower    = input.int(2, "Shree Power (Standard Only)", minval=1, group=groupShree)
+
+string groupVolCore  = "Vol Engine — Core"
+bool   useATRinRV    = input.bool(false, "Use ATR in RV Composite?", group=groupVolCore)
+bool   useVolKD      = input.bool(true, "Use Volatility Engine for Dyn Lengths?", group=groupVolCore)
+string volMode       = input.string("RV Composite", "Volatility Mode", options=["RV Composite","IVP","Hybrid"], group=groupVolCore)
+
+// Hidden Vol Inputs
+string groupVolGK = "Vol Engine — GK"
+int    gkLen      = input.int(14, "GK Length", minval=1, group=groupVolGK)
+int    gkPctLB    = input.int(252, "GK% Lookback", minval=10, group=groupVolGK)
+string groupVolYZ = "Vol Engine — YZ"
+int    yzLen      = input.int(21, "YZ Length", minval=1, group=groupVolYZ)
+int    yzPctLB    = input.int(252, "YZ% Lookback", minval=10, group=groupVolYZ)
+string groupVolATR = "Vol Engine — ATR"
+int    atrLen      = input.int(14, "ATR Length", minval=1, group=groupVolATR)
+int    atrPctLB    = input.int(252, "ATR% Lookback", minval=10, group=groupVolATR)
+string groupVolIVP   = "Vol Engine — IVP"
+int    manualIVP     = input.int(0, "Manual IVP (0–100)", minval=0, maxval=100, group=groupVolIVP)
+
+// Pro Features
+string groupDiv    = "Divergence"
+bool   showDiv     = input.bool(true, "Show Divergences?", group=groupDiv)
+int    pivLen      = input.int(5, "Pivot Lookback", minval=1, group=groupDiv)
+string groupTrap   = "Traps (Institutional)"
+bool   showTraps   = input.bool(true, "Show Wick Traps?", group=groupTrap)
+bool   showCVD     = input.bool(true, "Show CVD (Order Flow) Traps?", group=groupTrap, tooltip="Detects divergence between Price and Synthetic Cumulative Volume Delta.")
+float  trapSens    = input.float(2.0, "Trap Sensitivity", minval=0.5, step=0.1, group=groupTrap)
+
+//────────────────────────────────────
+// HELPER FUNCTIONS & MATH
+//────────────────────────────────────
+f_clamp01(float x) => x < 0.0 ? 0.0 : x > 1.0 ? 1.0 : x
+f_norm01(float val, float minv, float maxv) => na(val) or na(minv) or na(maxv) ? 0.0 : f_clamp01((val - minv) / math.max(maxv - minv, 1e-6))
+f_lerp(float a, float b, float t) => a + (b - a) * t
+
+// 1. LIQUIDITY BLEND SOURCE
+f_get_liq_price() =>
+    float volSma   = ta.sma(volume, 20)
+    float volNorm  = (volume / math.max(volSma, 1.0))
+    float vwapPx   = ta.vwap(close)
+    float mfRaw    = ((close - low) - (high - close)) / math.max(high - low, syminfo.mintick)
+    float typical  = (high + low + close) / 3.0
+    float rawBlend = (close * 0.5 + vwapPx * 0.3 + typical * 0.2) + (mfRaw * volNorm * (high - low) * 0.1)
+    math.max(low, math.min(high, rawBlend))
+
+// 2. DATA SOURCE SWITCH
+float src = switch baseMode
+    "Liquidity Blend"    => f_get_liq_price()
+    "OHLC4 (Heikin Ashi)"=> ohlc4
+    "HLC3 (Typical)"     => hlc3
+    => close
+
+//────────────────────────────────────
+// VOLATILITY ENGINE
+//────────────────────────────────────
+float gkTR      = ta.tr(true) / close
+float gkMagNorm = f_norm01(gkTR, ta.lowest(gkTR, gkLen), ta.highest(gkTR, gkLen))
+float gkPctNorm = f_norm01(gkTR, ta.lowest(gkTR, gkPctLB), ta.highest(gkTR, gkPctLB))
+float logRet    = math.abs(math.log(close / close[1]))
+float yzMagNorm = f_norm01(logRet, ta.lowest(logRet, yzLen), ta.highest(logRet, yzLen))
+float yzPctNorm = f_norm01(logRet, ta.lowest(logRet, yzPctLB), ta.highest(logRet, yzPctLB))
+float atrVal_v  = ta.atr(atrLen) / close
+float atrPctNorm= f_norm01(atrVal_v, ta.lowest(atrVal_v, atrPctLB), ta.highest(atrVal_v, atrPctLB))
+float ivpNorm   = manualIVP / 100.0
+float rvSum     = gkMagNorm + gkPctNorm + yzMagNorm + yzPctNorm + (useATRinRV ? atrPctNorm : 0.0)
+float rvCount   = 4.0 + (useATRinRV ? 1.0 : 0.0)
+float rvScore   = rvSum / rvCount
+float volScoreRaw = volMode == "RV Composite" ? rvScore : volMode == "IVP" ? ivpNorm : (rvScore + ivpNorm) / 2.0
+float volEff    = useVolKD ? f_clamp01(volScoreRaw) : 0.5
+
+//────────────────────────────────────
+// DYNAMIC LENGTH CALCULATOR
+//────────────────────────────────────
+f_get_dyn_len(int baseLen, bool active, int minL, int maxL, float eff) =>
+    float rawLen = float(baseLen) * (1.5 - eff)
+    int finalL   = active ? int(math.max(minL, math.min(maxL, rawLen))) : baseLen
+    finalL
+
+int finalLenN = f_get_dyn_len(lenN, useDynN, minN, maxN, volEff)
+int finalLenK = f_get_dyn_len(lenK, useDynK, minK, maxK, volEff)
+int finalLenD = f_get_dyn_len(lenD, useDynD, minD, maxD, volEff)
+
+//────────────────────────────────────
+// RAW STOCHASTIC ENGINES (The Arsenal)
+//────────────────────────────────────
+// A. CLASSIC
+float hh         = ta.highest(src, finalLenN)
+float ll         = ta.lowest(src, finalLenN)
+float rawClassic = (hh - ll) == 0.0 ? 0.0 : (src - (hh + ll)/2.0) / ((hh - ll)/2.0)
+
+// B. DTZ (Regression + ZScore)
+float trendLine = ta.linreg(src, finalLenN, 0)
+float dClose    = src - trendLine
+float sigmaDC   = ta.stdev(dClose, finalLenN)
+float rawDTZ    = sigmaDC == 0.0 or na(sigmaDC) ? 0.0 : dClose / sigmaDC
+
+// C. DTZ EXTENDED (Soft Clipped / Inverse Fisher)
+float rawDTZext = (math.exp(2.0 * rawDTZ) - 1.0) / (math.exp(2.0 * rawDTZ) + 1.0)
+
+// D. HILBERT ADAPTIVE (NEW) - Uses Homodyne Discriminator
+f_homodyne_cycle(float p) =>
+    float c1 = 0.0962, float c2 = 0.5769
+    var float period = 0.0
+    var float s1 = 0.0, var float s2 = 0.0, var float s3 = 0.0 // Smoothers
+    var float det = 0.0, var float q1 = 0.0, var float i1 = 0.0
+    var float jI = 0.0, var float jQ = 0.0
+    
+    // SuperSmoother 4-Pole
+    s1 := (4*p + 3*nz(p[1]) + 2*nz(p[2]) + nz(p[3])) / 10.0
+    
+    // Detrending
+    det := (c1*s1 + c2*nz(s1[2]) - c2*nz(s1[4]) - c1*nz(s1[6])) * (0.075*nz(period[1]) + 0.54)
+    
+    // Q1 (Quadrature)
+    q1 := (c1*det + c2*nz(det[2]) - c2*nz(det[4]) - c1*nz(det[6])) * (0.075*nz(period[1]) + 0.54)
+    i1 := det
+    
+    // Advance Phase
+    jI := (c1*i1 + c2*nz(i1[2]) - c2*nz(i1[4]) - c1*nz(i1[6])) * (0.075*nz(period[1]) + 0.54)
+    jQ := (c1*q1 + c2*nz(q1[2]) - c2*nz(q1[4]) - c1*nz(q1[6])) * (0.075*nz(period[1]) + 0.54)
+    
+    // Phase Calc
+    float re = jI * nz(i1[1]) + jQ * nz(q1[1])
+    float im = jI * nz(q1[1]) - jQ * nz(i1[1])
+    
+    // Dom Cycle
+    period := math.abs(im) > 0 and math.abs(re) > 0 ? 360.0 / math.atan(im/re) : nz(period[1])
+    period := period > 1.5 * nz(period[1]) ? 1.5 * nz(period[1]) : period
+    period := period < 0.67 * nz(period[1]) ? 0.67 * nz(period[1]) : period
+    period := period < 6 ? 6 : period > 50 ? 50 : period
+    0.2 * period + 0.8 * nz(period[1])
+
+float domCycle = f_homodyne_cycle(src)
+int hilbertLen = int(math.max(4, domCycle))
+float h_hh     = ta.highest(src, hilbertLen)
+float h_ll     = ta.lowest(src, hilbertLen)
+float rawHilbert = (h_hh - h_ll) == 0.0 ? 0.0 : (src - (h_hh + h_ll)/2.0) / ((h_hh - h_ll)/2.0)
+
+// E. EHLER'S ROOFING (Cycle Extraction)
+f_ehlers_roofing(float x) =>
+    float alpha1 = (math.cos(0.707 * 2 * math.pi / 48) + math.sin(0.707 * 2 * math.pi / 48) - 1) / math.cos(0.707 * 2 * math.pi / 48)
+    var float hp = 0.0
+    hp := (1 - alpha1 / 2) * (1 - alpha1 / 2) * (x - 2 * nz(x[1]) + nz(x[2])) + 2 * (1 - alpha1) * nz(hp[1]) - (1 - alpha1) * (1 - alpha1) * nz(hp[2])
+    float a1 = math.exp(-1.414 * 3.14159 / 10)
+    float b1 = 2 * a1 * math.cos(1.414 * 180 / 10)
+    float c2 = b1
+    float c3 = -a1 * a1
+    float c1 = 1 - c2 - c3
+    var float ss = 0.0
+    ss := c1 * (hp + nz(hp[1])) / 2 + c2 * nz(ss[1]) + c3 * nz(ss[2])
+    f_norm01(ss, ta.lowest(ss, finalLenN), ta.highest(ss, finalLenN)) * 2 - 1
+
+float rawEhlers = f_ehlers_roofing(src)
+
+// F. EHLER'S EXTENDED (Fisher Warp)
+float rawEhlersExt = (math.exp(2.0 * rawEhlers) - 1.0) / (math.exp(2.0 * rawEhlers) + 1.0)
+
+// G. FUSION / HYBRID HELPERS
+float gWeight    = math.exp(-math.pow(rawClassic, 2.0))
+float rawGauss   = rawClassic * gWeight
+float wDtzA      = 0.45 + 0.35 * (1.0 - volEff)
+float wClassA    = 0.25
+float wGaussA    = 0.30 + 0.35 * volEff
+float sumA       = wDtzA + wClassA + wGaussA
+float rawHybrid  = (wDtzA/sumA) * rawDTZext + (wClassA/sumA) * rawClassic + (wGaussA/sumA) * rawGauss
+float rawFusionD = 0.70 * rawDTZext + 0.10 * rawClassic + 0.20 * rawGauss
+
+//────────────────────────────────────
+// AUTOMATIC (SMART) 5-ZONE LOGIC
+//────────────────────────────────────
+f_get_auto_raw(float v, float r_ehl, float r_ehlEx, float r_cls, float r_fus, float r_dtzEx) =>
+    float res = 0.0
+    // Zone 1: 0% - 20% (Ehler's)
+    if v <= 0.20
+        res := r_ehl 
+    // Zone 2: 20% - 40% (Transition: Ehlers -> Ehlers Ext)
+    else if v <= 0.40
+        float t = (v - 0.20) / 0.20
+        res := f_lerp(r_ehl, r_ehlEx, t)
+    // Zone 3: 40% - 60% (Transition: Ehlers Ext -> Classic)
+    else if v <= 0.60
+        float t = (v - 0.40) / 0.20
+        res := f_lerp(r_ehlEx, r_cls, t)
+    // Zone 4: 60% - 80% (Transition: Classic -> Fusion DTZ)
+    else if v <= 0.80
+        float t = (v - 0.60) / 0.20
+        res := f_lerp(r_cls, r_fus, t)
+    // Zone 5: 80% - 100% (Transition: Fusion DTZ -> DTZ Extended)
+    else
+        float t = (v - 0.80) / 0.20
+        res := f_lerp(r_fus, r_dtzEx, t)
+    res
+
+float rawAuto = f_get_auto_raw(volEff, rawEhlers, rawEhlersExt, rawClassic, rawFusionD, rawDTZext)
+
+// FINAL RAW SELECTION
+float raw = switch rawMode
+    "Automatic (Smart 5-Zone)" => rawAuto
+    "Hilbert Adaptive (Zero-Lag)" => rawHilbert
+    "Classic"            => rawClassic
+    "DTZ Extended"       => rawDTZext
+    "Ehler's Roofing"    => rawEhlers
+    "Ehler's Extended"   => rawEhlersExt
+    "Fusion DTZ Dynamic" => rawFusionD
+    "Hybrid"             => rawHybrid
+    => rawClassic
+
+//────────────────────────────────────
+// CUSTOM MA ALGOS (Variable Support)
+//────────────────────────────────────
+f_sma_var(float src, int len) =>
+    float sum = 0.0
+    for i = 0 to len - 1
+        sum := sum + src[i]
+    sum / len
+
+f_ema_var(float src, int len) =>
+    float alpha = 2.0 / (len + 1.0)
+    var float ema = 0.0
+    ema := na(ema[1]) ? src : alpha * src + (1.0 - alpha) * nz(ema[1])
+    ema
+
+f_wma_var(float src, int len) =>
+    float norm = 0.0
+    float sum = 0.0
+    for i = 0 to len - 1
+        float weight = (len - i) * 1.0
+        norm := norm + weight
+        sum := sum + src[i] * weight
+    sum / norm
+
+get_fractal_efficiency(src, len) =>
+    float net_change = math.abs(src - src[len])
+    float sum_change = 0.0
+    for i = 1 to len
+        sum_change := sum_change + math.abs(src[i] - src[i-1])
+    efficiency = sum_change == 0 ? 1.0 : net_change / sum_change
+    efficiency
+
+math_shree_quantum(src, len, phase) =>
+    float eff = get_fractal_efficiency(src, len)
+    float dynamic_power = math.max(1.0, 4.0 * (1.0 - eff))
+    phaseRatio = phase < -100 ? 0.5 : phase > 100 ? 2.5 : phase / 100 + 1.5
+    beta = 0.45 * (len - 1) / (0.45 * (len - 1) + 2)
+    alpha = math.pow(beta, dynamic_power)
+    var float e0 = 0.0, var float e1 = 0.0, var float e2 = 0.0, var float jma = 0.0
+    e0 := (1 - alpha) * src + alpha * nz(e0[1])
+    e1 := (src - e0) * (1 - beta) + beta * nz(e1[1])
+    e2 := (e0 + phaseRatio * e1 - nz(jma[1])) * math.pow(1 - alpha, 2) + math.pow(alpha, 2) * nz(e2[1])
+    jma := e2 + nz(jma[1])
+    jma
+
+math_shree_standard(src, length, phase, power, turbo) =>
+    phaseRatio = phase < -100 ? 0.5 : phase > 100 ? 2.5 : phase / 100 + 1.5
+    beta = 0.45 * (length - 1) / (0.45 * (length - 1) + 2)
+    alpha = math.pow(beta, power)
+    var float e0 = 0.0, var float e1 = 0.0, var float e2 = 0.0, var float shree = 0.0
+    e0 := (1 - alpha) * src + alpha * nz(e0[1])
+    if turbo and length < 5
+        shree := e0 
+    else
+        e1 := (src - e0) * (1 - beta) + beta * nz(e1[1])
+        e2 := (e0 + phaseRatio * e1 - nz(shree[1])) * math.pow(1 - alpha, 2) + math.pow(alpha, 2) * nz(e2[1])
+        shree := e2 + nz(shree[1])
+    shree
+
+f_ma_universal(float src, int length, string algoType) =>
+    float res = 0.0
+    if algoType == "EMA"
+        res := f_ema_var(src, length)
+    else if algoType == "WMA"
+        res := f_wma_var(src, length)
+    else if algoType == "Shree Standard"
+        res := math_shree_standard(src, length, jmaPhase, jmaPower, jmaTurbo)
+    else if algoType == "Shree Quantum"
+        res := math_shree_quantum(src, length, jmaPhase)
+    else
+        res := f_sma_var(src, length)
+    res
+
+f_apply_layers(float src, int len, string algo, string layers) =>
+    float s1 = f_ma_universal(src, len, algo)
+    float s2 = f_ma_universal(s1,  len, algo)
+    float s3 = f_ma_universal(s2,  len, algo)
+    float out = layers == "Single" ? s1 : layers == "Double" ? s2 : s3
+    out
+
+//────────────────────────────────────
+// FINAL CALCULATION
+//────────────────────────────────────
+float K = f_apply_layers(raw, finalLenK, typeK, layerK)
+float D = f_apply_layers(K, finalLenD, typeD, layerD)
+
+//────────────────────────────────────
+// DIVERGENCE & TRAPS
+//────────────────────────────────────
+var float lastBearPrice = na
+var float lastBearK     = na
+var float lastBullPrice = na
+var float lastBullK     = na
+
+float ph = ta.pivothigh(high, pivLen, pivLen)
+float pl = ta.pivotlow(low, pivLen, pivLen)
+float osc_ph = ta.pivothigh(K, pivLen, pivLen)
+float osc_pl = ta.pivotlow(K, pivLen, pivLen)
+
+bool divBear = false
+if not na(ph) and not na(osc_ph)
+    if not na(lastBearPrice)
+        if ph > lastBearPrice and osc_ph < lastBearK
+            divBear := true
+    lastBearPrice := ph
+    lastBearK     := osc_ph
+
+bool divBull = false
+if not na(pl) and not na(osc_pl)
+    if not na(lastBullPrice)
+        if pl < lastBullPrice and osc_pl > lastBullK
+            divBull := true
+    lastBullPrice := pl
+    lastBullK     := osc_pl
+
+// 1. WICK TRAPS (Classic)
+float atrVal = ta.atr(14)
+float upWick = high - math.max(open, close)
+float dnWick = math.min(open, close) - low
+bool  isBearTrap = showTraps and (upWick > atrVal * trapSens)
+bool  isBullTrap = showTraps and (dnWick > atrVal * trapSens)
+
+// 2. CVD SYNTHETIC TRAPS (Institutional Order Flow)
+// Proxy: Vol * (Close loc within Bar) - measures aggresor imbalance
+float deltaProxy = volume * ((close - low) - (high - close)) / (high - low)
+var float cvd = 0.0
+cvd := cvd + deltaProxy
+// Detect Absorption: Price makes Higher High but CVD makes Lower High (Bearish Absorption)
+float ph_cvd = ta.pivothigh(cvd, pivLen, pivLen)
+float pl_cvd = ta.pivotlow(cvd, pivLen, pivLen)
+var float lastBearCVD = na
+var float lastBullCVD = na
+bool cvdBearTrap = false
+bool cvdBullTrap = false
+
+if showCVD
+    if not na(ph) and not na(ph_cvd)
+        // Price Higher High AND CVD Lower High = Trap
+        if ph > lastBearPrice and ph_cvd < lastBearCVD
+            cvdBearTrap := true
+        lastBearCVD := ph_cvd
+    if not na(pl) and not na(pl_cvd)
+        // Price Lower Low AND CVD Higher Low = Trap
+        if pl < lastBullPrice and pl_cvd > lastBullCVD
+            cvdBullTrap := true
+        lastBullCVD := pl_cvd
+
+// PLOTS
+// Trap Zones (Priority to CVD if enabled, else Wick)
+bgcolor(cvdBearTrap ? color.new(color.orange, 70) : isBearTrap ? color.new(color.red, 85) : na, title="Bear Trap Zone")
+bgcolor(cvdBullTrap ? color.new(color.lime, 70)   : isBullTrap ? color.new(color.green, 85) : na, title="Bull Trap Zone")
+
+// Divergence Labels
+plotshape(showDiv and divBear ? K[pivLen] + 0.1 : na, title="Bear Div", style=shape.labeldown, location=location.absolute, color=color.red, textcolor=color.white, text="R", offset=-pivLen)
+plotshape(showDiv and divBull ? K[pivLen] - 0.1 : na, title="Bull Div", style=shape.labelup, location=location.absolute, color=color.green, textcolor=color.white, text="R", offset=-pivLen)
+
+// Main Lines
+colK = K > K[1] ? #F2FF00 : #505050
+colD = #00E5FF
+plot(K, "K", color=colK, linewidth=2)
+plot(D, "D", color=colD, linewidth=1)
+hline(0.8, "Upper", color=color.gray, linestyle=hline.style_dotted)
+hline(-0.8, "Lower", color=color.gray, linestyle=hline.style_dotted)
+hline(0, "Zero", color=color.new(color.gray, 50))
