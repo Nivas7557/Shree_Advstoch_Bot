@@ -1,0 +1,62 @@
+# ==============================================================================
+# NSE STOCKS WATCHLIST | స్కాన్ చేయాల్సిన NSE స్టాక్స్ లిస్ట్
+# ==============================================================================
+# [ENG] 1. Add one NSE stock symbol per line (No need to add '.NS').
+#       2. To temporarily pause scanning a stock, put '#' before its name.
+#          Example: #RELIANCE
+#
+# [TEL] 1. ప్రతి లైన్‌లో ఒక్కో NSE స్టాక్ సింబల్ రాయండి (చివర '.NS' రాయాల్సిన పని లేదు).
+#       2. ఏదైనా స్టాక్ స్కానింగ్ తాత్కాలికంగా ఆపాలంటే దాని ముందు '#' పెట్టండి.
+#          ఉదాహరణ: #RELIANCE
+# ==============================================================================
+
+ADANIENT
+ADANIPORTS
+APOLLOHOSP
+ASIANPAINT
+AXISBANK
+BAJAJ-AUTO
+BAJFINANCE
+BAJAJFINSV
+BEL
+BPCL
+BHARTIARTL
+BRITANNIA
+CIPLA
+COALINDIA
+DRREDDY
+EICHERMOT
+GRASIM
+HCLTECH
+HDFCBANK
+HDFCLIFE
+HEROMOTOCO
+HINDALCO
+HINDUNILVR
+ICICIBANK
+ITC
+INDUSINDBK
+INFY
+JSWSTEEL
+KOTAKBANK
+LT
+M&M
+MARUTI
+NTPC
+NESTLEIND
+ONGC
+POWERGRID
+RELIANCE
+SBILIFE
+SHRIRAMFIN
+SBIN
+SUNPHARMA
+TCS
+TATACONSUM
+TATASTEEL
+TECHM
+TITAN
+TRENT
+ULTRACEMCO
+WIPRO
+BAJAJHFL
