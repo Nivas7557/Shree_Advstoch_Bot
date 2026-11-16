@@ -1,8 +1,37 @@
-// --- మీ అసలు కండిషన్ (Below -0.6 & K Crossing Over D) ---
-bool isBelowLimit = K < -0.6 and D < -0.6
-bool kCrossOverD  = ta.crossover(K, D)
-bool buySignal    = isBelowLimit and kCrossOverD
+// ==============================================================================
+// CUSTOM ALERT CONDITIONS | మీ కస్టమ్ అలర్ట్ కండిషన్స్
+// ==============================================================================
+// [ENG] Available Variables from AdvStoch:
+// [TEL] AdvStoch నుండి అందుబాటులో ఉన్న వేరియబుల్స్:
+//   K  -> %K Line value (-1.0 to +1.0)
+//   D  -> %D Line value (-1.0 to +1.0)
+//
+// [ENG] Crossing Functions | క్రాసింగ్ ఫంక్షన్లు:
+//   ta.crossover(K, D)   -> K crosses ABOVE D (K లైన్ D ని పైకి క్రాస్ చేసినప్పుడు)
+//   ta.crossunder(K, D)  -> K crosses BELOW D (K లైన్ D ని కిందకి క్రాస్ చేసినప్పుడు)
+// ==============================================================================
 
-plot(buySignal ? 1 : 0, "BuySignal")
+// ------------------------------------------------------------------------------
+// 1. BUY CONDITION (కొనుగోలు అలర్ట్ కండిషన్)
+// [ENG] Current: K & D are below -0.6 AND K crosses over D
+// [TEL] ప్రస్తుతం: K మరియు D విలువలు -0.6 కంటే కింద ఉండి, K లైన్ D ని పైకి క్రాస్ చేసినప్పుడు
+// ------------------------------------------------------------------------------
+bool buyCond = (K < -0.6 and D < -0.6) and ta.crossover(K, D)
+
+
+// ------------------------------------------------------------------------------
+// 2. SELL CONDITION (అమ్మకం అలర్ట్ కండిషన్)
+// [ENG] Currently OFF (false). To activate, comment 'false' and uncomment below line:
+// [TEL] ప్రస్తుతం ఆఫ్‌లో ఉంది (false). ఆన్ చేయాలంటే కింది ఉదాహరణ లైన్ ముందు '//' తీసేయండి:
+// bool sellCond = (K > 0.6 and D > 0.6) and ta.crossunder(K, D)
+// ------------------------------------------------------------------------------
+bool sellCond = false
+
+
+// ==============================================================================
+// SCANNER OUTPUTS (DO NOT EDIT BELOW 4 LINES | కింది 4 లైన్లను మార్చవద్దు)
+// ==============================================================================
+plot(buyCond ? 1 : 0, "BuySignal")
+plot(sellCond ? 1 : 0, "SellSignal")
 plot(K, "K_Val")
 plot(D, "D_Val")
