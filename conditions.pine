@@ -1,7 +1,7 @@
 // --- మీ కస్టమ్ కండిషన్స్ ఇక్కడ మార్చుకోవచ్చు ---
 bool isBelowLimit = K < -0.6 and D < -0.6
 bool kCrossOverD  = ta.crossover(K, D)
-bool buySignal    = isBelowLimit and kCrossOverD
+bool buySignal    = true
 
 // స్కానర్ కోసం అవుట్‌పుట్ ప్లాట్స్ (వీటిని మార్చవద్దు)
 plot(buySignal ? 1 : 0, "BuySignal")
