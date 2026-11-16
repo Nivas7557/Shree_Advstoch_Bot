@@ -1,0 +1,13 @@
+{
+  "name": "advstoch-scanner",
+  "version": "1.0.0",
+  "description": "Automated NSE Stock Screener using AdvStoch PineScript and Telegram Alerts",
+  "type": "module",
+  "scripts": {
+    "start": "node scanner.js"
+  },
+  "dependencies": {
+    "pinets": "latest",
+    "yahoo-finance2": "latest"
+  }
+}
