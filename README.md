@@ -45,4 +45,6 @@
 * **Author & Creator:** **Shreenivasss** (Original creator of *AdvStoch v5.5.3* & Screener Architecture)
 * **Powered By:** [PineTS](https://github.com) (Pine Script Runtime), [yahoo-finance2](https://github.com) (Market Data), & GitHub Actions.
 * **License:** This project is licensed under the **Mozilla Public License 2.0 (MPL-2.0)** — see [mozilla.org/MPL/2.0](https://mozilla.org) for details.
-* **Disclaimer:** *For personal technical analysis and educational alerts only. Always verify signals on TradingView before trading.*
+* **Disclaimer:** *For personal technical analysis and educational Purposes only not a financial advisory. 
+Never or think we'll before Investing with other's ideas.
+ Always verify signals on TradingView and your risk parameters before trading.*
