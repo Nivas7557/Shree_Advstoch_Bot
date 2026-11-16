@@ -21,7 +21,6 @@ const STOCKS = [
   'TECHM.NS', 'TITAN.NS', 'TRENT.NS', 'ULTRACEMCO.NS', 'WIPRO.NS'
 ];
 
-// ఒరిజినల్ ఇండికేటర్ + కండిషన్స్ ఫైల్ రెంటినీ ఆటోమేటిక్‌గా కలపడం
 const baseIndicator = fs.readFileSync('./advstoch.pine', 'utf-8');
 const customConditions = fs.readFileSync('./conditions.pine', 'utf-8');
 const fullPineCode = `${baseIndicator}\n\n${customConditions}`;
@@ -44,7 +43,7 @@ async function fetchCandles(symbol, interval) {
   period1.setDate(period1.getDate() - (interval === '1d' ? 400 : 30));
 
   const result = await yahooFinance.chart(symbol, {
-    period1: period1.toISOString().split('T'),
+    period1: period1.toISOString().split('T')[0],
     interval: interval
   });
 
