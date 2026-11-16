@@ -1,10 +1,12 @@
 import fs from 'fs';
 import { PineTS } from 'pinets';
-import yahooFinance from 'yahoo-finance2';
+import YahooFinance from 'yahoo-finance2';
+
+const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const TIMEFRAME = '15m'; // '15m', '1h', లేదా '1d'
+const TIMEFRAME = '15m'; // '15m', '1h', లేదా '1d' మార్చుకోవచ్చు
 
 const STOCKS = [
   'ADANIENT.NS', 'ADANIPORTS.NS', 'APOLLOHOSP.NS', 'ASIANPAINT.NS', 'AXISBANK.NS',
@@ -42,7 +44,7 @@ async function fetchCandles(symbol, interval) {
   period1.setDate(period1.getDate() - (interval === '1d' ? 400 : 30));
 
   const result = await yahooFinance.chart(symbol, {
-    period1: period1.toISOString().split('T')[0],
+    period1: period1.toISOString().split('T'),
     interval: interval
   });
 
