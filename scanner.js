@@ -6,22 +6,28 @@ const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const TIMEFRAME = '15m';
+const TIMEFRAME = '15m'; // '15m', '1h', లేదా '1d' మార్చుకోవచ్చు
 
-const STOCKS = ['RELIANCE.NS', 'TCS.NS', 'HDFCBANK.NS'];
+const STOCKS = [
+  'ADANIENT.NS', 'ADANIPORTS.NS', 'APOLLOHOSP.NS', 'ASIANPAINT.NS', 'AXISBANK.NS',
+  'BAJAJ-AUTO.NS', 'BAJFINANCE.NS', 'BAJAJFINSV.NS', 'BEL.NS', 'BPCL.NS',
+  'BHARTIARTL.NS', 'BRITANNIA.NS', 'CIPLA.NS', 'COALINDIA.NS', 'DRREDDY.NS',
+  'EICHERMOT.NS', 'GRASIM.NS', 'HCLTECH.NS', 'HDFCBANK.NS', 'HDFCLIFE.NS',
+  'HEROMOTOCO.NS', 'HINDALCO.NS', 'HINDUNILVR.NS', 'ICICIBANK.NS', 'ITC.NS',
+  'INDUSINDBK.NS', 'INFY.NS', 'JSWSTEEL.NS', 'KOTAKBANK.NS', 'LT.NS',
+  'M&M.NS', 'MARUTI.NS', 'NTPC.NS', 'NESTLEIND.NS', 'ONGC.NS',
+  'POWERGRID.NS', 'RELIANCE.NS', 'SBILIFE.NS', 'SHRIRAMFIN.NS', 'SBIN.NS',
+  'SUNPHARMA.NS', 'TCS.NS', 'TATACONSUM.NS', 'TATASTEEL.NS', 'TECHM.NS',
+  'TITAN.NS', 'TRENT.NS', 'ULTRACEMCO.NS', 'WIPRO.NS', 'BAJAJHFL.NS'
+];
 
 const baseIndicator = fs.readFileSync('./advstoch.pine', 'utf-8');
 const customConditions = fs.readFileSync('./conditions.pine', 'utf-8');
 const fullPineCode = baseIndicator + '\n\n' + customConditions;
 
 async function sendTelegramAlert(message) {
-  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
-    console.error('❌ ERROR: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing in GitHub Secrets!');
-    return;
-  }
-
-  const url = 'https://api.telegram.org' + '/bot' + TELEGRAM_BOT_TOKEN + '/sendMessage';
-  const res = await fetch(url, {
+  const url = 'https://telegram.org' + '/bot' + TELEGRAM_BOT_TOKEN + '/sendMessage';
+  await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -30,21 +36,14 @@ async function sendTelegramAlert(message) {
       parse_mode: 'HTML'
     })
   });
-
-  const data = await res.json();
-  if (!data.ok) {
-    console.error('❌ Telegram API Error:', JSON.stringify(data));
-  } else {
-    console.log('✅ Telegram Message Delivered Successfully!');
-  }
 }
 
 async function fetchCandles(symbol, interval) {
   const period1 = new Date();
-  period1.setDate(period1.getDate() - 30);
+  period1.setDate(period1.getDate() - (interval === '1d' ? 400 : 30));
 
   const result = await yahooFinance.chart(symbol, {
-    period1: period1.toISOString().split('T')[0],
+    period1: period1.toISOString().split('T'),
     interval: interval
   });
 
@@ -61,34 +60,41 @@ async function fetchCandles(symbol, interval) {
 }
 
 async function runScanner() {
-  console.log('--- Starting Diagnostic Test ---');
-  await sendTelegramAlert('🔔 <b>Test Alert:</b> AdvStoch Scanner connected!');
+  console.log('Scanning ' + STOCKS.length + ' stocks on ' + TIMEFRAME + '...');
 
   for (const symbol of STOCKS) {
     try {
       const candles = await fetchCandles(symbol, TIMEFRAME);
-      console.log(symbol + ': Fetched ' + candles.length + ' candles.');
+      if (candles.length < 260) continue;
 
       const pineTS = new PineTS(candles);
       const result = await pineTS.run(fullPineCode);
 
-      console.log('Available Plots:', Object.keys(result.plots));
-      const signals = result.plots['BuySignal']?.data;
-      const kVals   = result.plots['K_Val']?.data;
-      const dVals   = result.plots['D_Val']?.data;
+      const signals = result.plots['BuySignal'].data;
+      const kVals   = result.plots['K_Val'].data;
+      const dVals   = result.plots['D_Val'].data;
 
-      const lastIdx = signals.length - 2;
-      console.log(symbol + ' -> Signal: ' + signals[lastIdx] + ', K: ' + kVals[lastIdx] + ', D: ' + dVals[lastIdx]);
-
+      const lastIdx = signals.length - 2; 
       if (Number(signals[lastIdx]) === 1 || signals[lastIdx] === true) {
         const cleanName = symbol.replace('.NS', '');
-        const msg = '🟢 <b>' + cleanName + '</b> | K: ' + Number(kVals[lastIdx]).toFixed(3) + ' | D: ' + Number(dVals[lastIdx]).toFixed(3);
+        const price = candles[lastIdx].close.toFixed(2);
+        const kVal = Number(kVals[lastIdx]).toFixed(3);
+        const dVal = Number(dVals[lastIdx]).toFixed(3);
+
+        const msg = '🟢 <b>AdvStoch Oversold Crossover!</b>\n\n' +
+                    '📈 <b>Stock:</b> ' + cleanName + '\n' +
+                    '⏱ <b>Timeframe:</b> ' + TIMEFRAME + '\n' +
+                    '💰 <b>Price:</b> ₹' + price + '\n' +
+                    '📊 <b>K:</b> ' + kVal + ' | <b>D:</b> ' + dVal + ' (&lt; -0.6)';
+
         await sendTelegramAlert(msg);
+        console.log('✅ Alert sent for ' + cleanName);
       }
     } catch (err) {
-      console.error('❌ Error in ' + symbol + ':', err);
+      console.error('❌ Error scanning ' + symbol + ':', err.message);
     }
   }
+  console.log('Scan finished.');
 }
 
 runScanner();
