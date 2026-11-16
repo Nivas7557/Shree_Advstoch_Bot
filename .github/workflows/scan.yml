@@ -1,0 +1,28 @@
+name: AdvStoch Stock Screener
+
+on:
+  schedule:
+    # సోమవారం నుండి శుక్రవారం వరకు మార్కెట్ టైమ్ (9:15 AM - 3:30 PM IST) లో ప్రతి 15 నిమిషాలకు
+    - cron: '*/15 3-10 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run AdvStoch Scanner
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: node scanner.js
